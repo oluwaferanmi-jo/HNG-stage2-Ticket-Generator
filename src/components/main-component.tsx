@@ -1,0 +1,199 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { validateTicketForm } from "@/utils/validation"; // Remove sendTicketEmail import
+import { FormStep, TicketFormData } from "@/types";
+import { downloadTicket } from "@/utils/ticket-download";
+import TransitionWrapper from "@/context/transition-wrapper";
+import FormStep1 from "@/components/form/step-one";
+import FormStep2 from "@/components/form/step-two";
+import FormStep3 from "@/components/form/step-three";
+import { useStateContext } from "@/context/state-context";
+
+export default function Home() {
+	const { isLoading, setIsLoading, error, setError, showSuccess } =
+		useStateContext();
+
+	const [currentStep, setCurrentStep] = useState<FormStep>(
+		FormStep.TicketSelection
+	);
+	const [formData, setFormData] = useState<TicketFormData>({
+		ticketType: "REGULAR",
+		quantity: 1,
+		fullName: "",
+		email: "",
+		avatarUrl: "",
+		aboutProject: "",
+		price: 0,
+	});
+
+	const handleUpdateFormData = (data: Partial<TicketFormData>) => {
+		setFormData((prevData) => ({
+			...prevData,
+			...data,
+		}));
+	};
+
+	const ticketRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const savedData = localStorage.getItem("ticketFormData");
+		if (savedData) {
+			setFormData(JSON.parse(savedData));
+		}
+	}, []);
+
+	useEffect(() => {
+		localStorage.setItem("ticketFormData", JSON.stringify(formData));
+	}, [formData]);
+
+	const handleNext = async () => {
+		console.log("Form Data:", formData);
+		const errors = validateTicketForm(formData, currentStep);
+
+		if (Object.keys(errors).length > 0) {
+			setError(Object.values(errors)[0]);
+			return;
+		}
+
+		if (currentStep === FormStep.Complete) {
+			setIsLoading(true);
+			try {
+				if (ticketRef.current) {
+					const ticketImage = await downloadTicket(ticketRef.current);
+					const tickets = JSON.parse(localStorage.getItem("tickets") || "[]");
+					tickets.push({ ...formData, ticketImage });
+					localStorage.setItem("tickets", JSON.stringify(tickets));
+					showSuccess("Ticket booked successfully!");
+				}
+			} catch (error) {
+				console.log(error);
+				setError("Failed to process ticket. Please try again.");
+				return;
+			} finally {
+				setIsLoading(false);
+			}
+		}
+
+		setCurrentStep((prev) => (prev + 1) as FormStep);
+	};
+
+	const handleBack = () => {
+		setCurrentStep((prev) => (prev - 1) as FormStep);
+	};
+
+	return (
+		<main className="text-white md:p-4 max-w-4xl mx-auto">
+			<div className="">
+				<div className="min-w-2xl mx-auto rounded-3xl border border-slate-500 p-8">
+					<div className="flex justify-between items-center mb-2">
+						<h2 className="text-xl font-serif">
+							{currentStep === FormStep.TicketSelection && "Ticket Selection"}
+							{currentStep === FormStep.AttendeeDetails && "Attendee Details"}
+							{currentStep === FormStep.Complete && "Ready"}
+						</h2>
+						<span>Step {currentStep}/3</span>
+					</div>
+					<div className="rounded-3xl">
+						<div className="relative w-full h-1 bg-gray-700 rounded mb-8 overflow-hidden">
+							<motion.div
+								className="absolute h-full bg-teal-500 rounded"
+								initial={{ width: 0 }}
+								animate={{ width: `${(currentStep / 3) * 100}%` }}
+								transition={{ duration: 0.3 }}
+							/>
+						</div>
+
+						<AnimatePresence>
+							{isLoading && (
+								<motion.div
+									initial={{ opacity: 0 }}
+									animate={{ opacity: 1 }}
+									exit={{ opacity: 0 }}
+									className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+								>
+									<div className="bg-teal-900 p-6 rounded-lg">
+										<div className="animate-spin w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full" />
+									</div>
+								</motion.div>
+							)}
+						</AnimatePresence>
+						<AnimatePresence>
+							{error && (
+								<motion.div
+									initial={{ opacity: 0, y: 20 }}
+									animate={{ opacity: 1, y: 0 }}
+									exit={{ opacity: 0, y: -20 }}
+									className="fixed bottom-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg"
+								>
+									{error}
+								</motion.div>
+							)}
+						</AnimatePresence>
+						<TransitionWrapper step={currentStep}>
+							<div className="bg-[radial-gradient(ellipse_at_top_left,_#07373F_0%,_#0A0C11_140%)] border border-slate-500 backdrop-blur-sm rounded-3xl p-6 shadow-xl min-w-4xl">
+								{currentStep === FormStep.TicketSelection && (
+									<FormStep1
+										formData={formData}
+										updateFormData={handleUpdateFormData}
+										errors={error}
+									/>
+								)}
+
+								{currentStep === FormStep.AttendeeDetails && (
+									<FormStep2
+										formData={formData}
+										updateFormData={handleUpdateFormData}
+										errors={error}
+									/>
+								)}
+
+								{currentStep === FormStep.Complete && (
+									<div ref={ticketRef}>
+										<FormStep3
+											formData={formData}
+											onDownload={() => downloadTicket(ticketRef.current!)}
+										/>
+									</div>
+								)}
+
+								{currentStep !== FormStep.Complete && (
+									<div className="flex flex-col md:flex-row justify-between mt-6 gap-4">
+										<motion.button
+											whileHover={{ scale: 1.02 }}
+											whileTap={{ scale: 0.98 }}
+											onClick={
+												currentStep === FormStep.TicketSelection
+													? () => window.location.reload()
+													: handleBack
+											}
+											className="px-6 py-2 border border-slate-500 text-slate-300 rounded-lg w-full"
+											disabled={isLoading}
+										>
+											{currentStep === FormStep.TicketSelection
+												? "Cancel"
+												: "Back"}
+										</motion.button>
+
+										<motion.button
+											whileHover={{ scale: 1.02 }}
+											whileTap={{ scale: 0.98 }}
+											onClick={handleNext}
+											className="px-6 py-2 bg-teal-500 text-white rounded-lg w-full"
+											disabled={isLoading}
+										>
+											{currentStep === FormStep.TicketSelection
+												? "Next"
+												: "Get My Free Ticket"}
+										</motion.button>
+									</div>
+								)}
+							</div>
+						</TransitionWrapper>
+					</div>
+				</div>
+			</div>
+		</main>
+	);
+}
